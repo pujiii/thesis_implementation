@@ -12,28 +12,38 @@ function mergeActions(actions::Vector{Action}) :: Action
     return mergeActions(actions[1], mergeActions(actions[2:end]))
 end
 
-function uniquifyActions(a₁::Action, a₂::Action) :: Action
+function is_unique(p :: PParam, actions :: Vector{Action})
+    return !any([any([p.name == q.name for q in a.params]) for a in actions])
+end
+
+function uniquifyActions!(a₁::Action, other_actions::Vector{Action})
     # change the names of the parameters of a₁ to avoid conflicts with a₂
     for p in a₁.params
-        while any([p.name == q.name for q in a₂.params])
+        while !is_unique(p, other_actions)
             # recursively change names of all uses of p in a₁ to p_
-            for e in vcat(to_list(a₁.pre)) vcat(to_list(a₁.eff))
-                if e isa PPredCall
-                    for arg in e.args
-                        arg.name == p.name && (arg.name = Symbol(string(p.name, "_")))
+            for e in vcat(to_list(a₁.pre), to_list(a₁.eff))
+                args = e isa PPredCall ? e.args : e.arg.args
+                for arg in args
+                    if arg.name == p.name
+                        setfield!(arg, :name, Symbol(string(arg.name) * "_"))
                     end
                 end
             end
+            setfield!(p, :name, Symbol(string(p.name) * "_"))
         end
     end
 end
 
-function mergeActions(a₁::Action, a₂::Action) :: Action
+function mergeActions(a₁::Action, a₂::Action, all_actions :: Vector{Action}) :: Action
+    
+    other_actions = filter(x -> x != a₁, all_actions)
+    uniquifyActions!(a₁, other_actions)
 
-    uniquifyActions(a₁, a₂)
+    other_actions = filter(x -> x != a₂, all_actions)
+    uniquifyActions!(a₂, other_actions)
 
-    pre :: Set{PExpr} = []
-    eff :: Set{PExpr} = []
+    pre = Set{PExpr}()
+    eff = Set{PExpr}()
     # add all preconditions of a₁
     for p in a₁.pre.args push!(pre, p) end
 
@@ -55,7 +65,12 @@ function mergeActions(a₁::Action, a₂::Action) :: Action
         end
     end
 
-    return Action(a₁.name * "+" * a₂.name, union(Set(a₁.params), Set(a₂.params)) , PAnd(pre), PAnd(eff))
+    combined_params = vcat(a₁.params, a₂.params)
+
+    combined_name = Symbol(string(a₁.name) * "+" * string(a₂.name))
+    
+    return Action(combined_name, combined_params, PAnd(collect(pre)), PAnd(collect(eff)))
+
 end
 
 function get_name(expr::PExpr) :: Symbol
@@ -66,7 +81,7 @@ function get_name(expr::PExpr) :: Symbol
     end
 end
 
-function to_list(expr::PExpr) :: [Union{Ppred, PNot{PPred}}]
+function to_list(expr::PExpr) :: Vector{Union{PPredCall, PNot{PPredCall}}}
     if expr isa PPredCall
         return [expr.pred]
     elseif expr isa PNot
@@ -74,4 +89,6 @@ function to_list(expr::PExpr) :: [Union{Ppred, PNot{PPred}}]
     elseif expr isa PAnd
         return expr.args
     end
+    # else throw an error
+    error("Invalid expression type")
 end

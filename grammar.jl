@@ -7,6 +7,8 @@ mutable struct PCustomType <: PType
     type::PType
 end
 
+mutable struct PAny <: PType end
+
 mutable struct PPred 
     name::Symbol
     params::Vector{PType}
@@ -36,7 +38,7 @@ mutable struct PAnd <: PExpr
     args::Vector{Union{PPredCall, PNot{PPredCall}}}
 end
 
-mutable struct Action
+mutable struct PAction
     name::Symbol
     params::Vector{PParam}
     pre::PExpr
@@ -84,8 +86,8 @@ function Base.show(io::IO, andExpr::PAnd)
     println(io, "])")
 end
 
-function Base.show(io::IO, action::Action)
-    println(io, "Action: ", action.name)
+function Base.show(io::IO, action::PAction)
+    println(io, "PAction: ", action.name)
     println(io, "  Params: ", action.params)
     println(io, "  Preconditions: ", action.pre)
     println(io, "  Effects: ", action.eff)

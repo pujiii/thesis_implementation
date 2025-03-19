@@ -1,22 +1,23 @@
 include("grammar.jl")
 
-function mergeActions(actions::Vector{Action}) :: Action
+
+function mergeActions(actions::Vector{PAction}, all_actions ::Vector{PAction}) :: PAction
     # base cases
     if length(actions) == 1
         return actions[1]
     elseif length(actions) == 2
-        return mergeActions(actions[1], actions[2])
+        return mergeActions(actions[1], actions[2], all_actions)
     end
 
     # recursive case
-    return mergeActions(actions[1], mergeActions(actions[2:end]))
+    return mergeActions(actions[1], mergeActions(actions[2:end], all_actions), all_actions)
 end
 
-function is_unique(p :: PParam, actions :: Vector{Action})
+function is_unique(p :: PParam, actions :: Vector{PAction})
     return !any([any([p.name == q.name for q in a.params]) for a in actions])
 end
 
-function uniquifyActions!(a₁::Action, other_actions::Vector{Action})
+function uniquifyActions!(a₁::PAction, other_actions::Vector{PAction})
     # change the names of the parameters of a₁ to avoid conflicts with a₂
     for p in a₁.params
         while !is_unique(p, other_actions)
@@ -34,7 +35,7 @@ function uniquifyActions!(a₁::Action, other_actions::Vector{Action})
     end
 end
 
-function mergeActions(a₁::Action, a₂::Action, all_actions :: Vector{Action}) :: Action
+function mergeActions(a₁::PAction, a₂::PAction, all_actions :: Vector{PAction}) :: PAction
     
     other_actions = filter(x -> x != a₁, all_actions)
     uniquifyActions!(a₁, other_actions)
@@ -69,7 +70,7 @@ function mergeActions(a₁::Action, a₂::Action, all_actions :: Vector{Action})
 
     combined_name = Symbol(string(a₁.name) * "+" * string(a₂.name))
     
-    return Action(combined_name, combined_params, PAnd(collect(pre)), PAnd(collect(eff)))
+    return PAction(combined_name, combined_params, PAnd(collect(pre)), PAnd(collect(eff)))
 
 end
 

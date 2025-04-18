@@ -55,6 +55,30 @@ function convert_action(action::PDDL.Action, domain::PDDL.Domain) :: PAction
     return PAction(action.name, argtypes, preconditions, effects)
 end
 
+function convert_action(action::PAction) :: PDDL.GenericAction
+    # Extract the name
+    name = action.name
+
+    # Convert params to Vector{Var} and Vector{Symbol}
+    args = [Var(param.name) for param in action.params]  # Vector{Var}
+    types = [param.type isa PObjectType ? :object : param.type.name for param in action.params]
+
+    precond = convert_expr(action.pre)
+    effect = convert_expr(action.eff)
+
+    return PDDL.GenericAction(name, args, types, precond, effect)
+end
+
+function convert_expr(expr:: PExpr) :: Term
+    if expr isa PPredCall
+        return Compound(Symbol(expr.pred.name), [Var(arg.name) for arg in expr.args])
+    elseif expr isa PNot
+        return Compound(:not, [convert_expr(expr.arg)])
+    elseif expr isa PAnd
+        return Compound(:and, [convert_expr(arg) for arg in expr.args])
+    end
+end
+
 function convert_expr(term::Term, predicates::Dict{Symbol, PPred}) :: PExpr
     if term.name == :and
         return PAnd([convert_expr(arg, predicates) for arg in term.args])

@@ -65,8 +65,23 @@ a₂ = PAction(:a,
                 )
             )
 
-a1_converted = convert_action(a₁, domain)
-a2_converted = convert_action(a₂, domain)
+merged = nothing
+if true
+    
+    call_names :: Vector{Tuple{Vararg{Symbol}}} = [(:x,), (:x,)]
+    call_types = [PParam(:x, PObjectType())]
+
+    global merged = merge_actions_params([deepcopy(a₁), deepcopy(a₂)], call_names, call_types)
+
+    global merged_orig = mergeActions([a₁, a₂], [a₁, a₂])
+
+end
+
+merged_converted = convert_action(merged)
+merged_orig_converted = convert_action(merged_orig)
+
+# a1_converted = convert_action(a₁, domain)
+# a2_converted = convert_action(a₂, domain)
 
 # a₃ = mergeActions(a₁, a₂, [a₁, a₂])
 

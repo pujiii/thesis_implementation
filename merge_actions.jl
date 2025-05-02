@@ -1,5 +1,89 @@
 include("grammar.jl")
 
+# MERGE ACTIONS AND SHRINK PARAMETERS
+function merge_actions_params(actions::Vector{PAction}, param_calls::Vector{Any}, final_params::Vector{PParam}) :: PAction
+    # STEP 1: In each action, replace the parameter references with the corresponding parameter call names
+    for i in 1:length(actions)
+        action = actions[i]
+        params_new = param_calls[i]
+        for j in 1:length(action.params)
+            param_original = action.params[j]
+            param_new = params_new[j]
+            replace_params!(action, param_original.name, param_new)
+        end
+    end
+
+    # STEP 2: Divide & Conquer to merge the pre conditions and effects of the actions
+    merged_action = div_conq_pre_post(actions)
+
+    # STEP 3: Use merged preconditions and effects, together with `final_call_names` to create a new action
+    # Make new name for the action (a_1-x-y-z-plus-a_2-y-z-plus-a_3-a-b, etc. for any number of actions)
+    new_name = ""
+    for i in 1:length(actions)
+        action = actions[i]
+        new_name *= string(action.name) * "-" * join([string(x) for x in param_calls[i]], "-")
+        if i < length(actions)
+            new_name *= "-plus-"
+        end
+    end
+
+    merged_action.name = Symbol(new_name)
+    merged_action.params = final_params
+    return merged_action
+end
+
+function div_conq_pre_post(actions::Vector{PAction}) :: PAction
+    if length(actions) == 1
+        return action[1]
+    elseif length(actions) == 2
+        return div_conq_pre_post(actions[1], actions[2])
+    end
+    return div_conq_pre_post(actions[1], div_conq_pre_post(actions[2:end]))
+end
+
+function div_conq_pre_post(a₁::PAction, a₂::PAction) :: PAction
+    # merge the preconditions and effects of a₁ and a₂
+    pre = Set{PExpr}()
+    eff = Set{PExpr}()
+    
+    # add all preconditions of a₁
+    union!(pre, a₁.pre.args)
+
+    # for each precondition of a₂
+    for p in to_list(a₂.pre)
+        # check if it is satisfied by the effects of a₁. if not, add it to the preconditions
+        if !any([p == q for q in a₁.eff.args])
+            push!(pre, p)
+        end
+    end
+
+    # add all effects of a₂
+    for e in a₂.eff.args push!(eff, e) end
+
+    # add each effect of a₁ that is not negated by a₂
+    for e in a₁.eff.args
+        if !any([get_name(e) == get_name(q) for q in a₂.eff.args])
+            push!(eff, e)
+        end
+    end
+
+    res = deepcopy(a₁)
+    res.pre = PAnd(collect(pre))
+    res.eff = PAnd(collect(eff))
+    return res
+end
+
+function replace_params!(action::PAction, from::Symbol, to::Symbol)
+    # replace the parameter references in the preconditions and effects with the new names
+    for e in vcat(to_list(action.pre), to_list(action.eff))
+        args = e isa PPredCall ? e.args : e.arg.args
+        for arg in args
+            if arg.name == from
+                setfield!(arg, :name, to)
+            end
+        end
+    end
+end
 
 function mergeActions(actions::Vector{PAction}, all_actions ::Vector{PAction}) :: PAction
     # base cases

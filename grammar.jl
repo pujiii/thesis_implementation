@@ -1,3 +1,5 @@
+import Base: ==, hash
+
 abstract type PType end
 
 mutable struct PObjectType <: PType end
@@ -18,6 +20,16 @@ mutable struct PParam
     name::Symbol
     type::PType
 end
+
+# Define equality (==) for your types
+==(a::PParam, b::PParam) = a.name == b.name && a.type == b.type
+==(a::PObjectType, b::PObjectType) = true  # All PObjectTypes are equal
+==(a::PCustomType, b::PCustomType) = a.name == b.name && a.type == b.type
+
+# Define matching hash functions
+hash(p::PParam, h::UInt) = hash((p.name, p.type), h)
+hash(::PObjectType, h::UInt) = hash(:PObjectType, h)  # Singleton-like hashing
+hash(p::PCustomType, h::UInt) = hash((p.name, p.type), h)
 
 mutable struct PParamRef
     name::Symbol

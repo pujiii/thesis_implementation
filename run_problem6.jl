@@ -6,7 +6,6 @@ include("conversion.jl")
 include("utils.jl")
 include("clear_db.jl")
 
-
 # Function to export search tree to JSON
 function export_search_tree_to_json(search_tree::Dict, static_predicates)
     # Find the root node
@@ -43,6 +42,17 @@ function pathnode_to_dict(node_id, search_tree, children_map, static_predicates,
     return node_dict
 end
 
+function build_children_mapping(search_tree::Dict)
+    # Initialize an empty dictionary to store children for each node
+    children_map = Dict(key => [] for key in search_tree.keys)
+    for (node_id, node) in search_tree
+        if !isnothing(node.parent.action)
+            push!(children_map[node.parent.id], node_id)
+        end
+    end
+    return children_map
+end
+
 function main()
 
     test_files_location = "pddlgym-problems/baking"
@@ -54,15 +64,6 @@ function main()
 
     domain_hash = hash_file(domain_location)
 
-    # get the macro actions from the database
-    picked = pick_macros(db_name, domain, domain_hash, 5)
-    merged_macros = [mergeActions([convert_action(action, domain) for action in macro_action], [convert_action(action, domain) for action in macro_action]) for macro_action in picked]
-    converted_merged_macros = [convert_action(macro_action) for macro_action in merged_macros]
-
-    for macro_action in converted_merged_macros
-        domain.actions[macro_action.name] = macro_action
-    end
-
     problem_name = "problem6.pddl"
     println("Start solving: $problem_name")
     problem = load_problem(problems_locations * "/" * problem_name)
@@ -71,17 +72,25 @@ function main()
     state = initstate(domain, problem)
     spec = MinStepsGoal(problem)
     planner = AStarPlanner(NullHeuristic())
-
     # time how long it takes to solve the problem
     # bench = @benchmark sol = $planner($domain, $state, $spec) evals=1 samples=5
     # time_taken = mean(bench.times) / 1e9
-    return planner(domain, state, spec)
-    # time_taken = sol.expanded
-    # println("Problem solved")
+    # sol = planner(domain, state, spec)
+
+    # store_macros(domain, "params_" * db_name, sol, domain_hash, true)
+    # return pick_macros("params_" * db_name, domain, domain_hash, 5, true)
+    return problem
 
 end
 
-sol = main()
+problem = main()
+
+# converted_merged_macros = [convert_action(macro_action) for macro_action in macros]
+
+# for macro_action in converted_merged_macros
+#     show(macro_action)
+#     println()
+# end
 
 
-dict = export_search_tree_to_json(sol.search_tree, [])
+# dict = export_search_tree_to_json(sol.search_tree, sol.static_predicates)

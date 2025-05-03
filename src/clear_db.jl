@@ -1,6 +1,5 @@
 using SQLite, DataFrames
 
-
 function clear_database(db)
     # Connect to the database
     db = SQLite.DB(db)

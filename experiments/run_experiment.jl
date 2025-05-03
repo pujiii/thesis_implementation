@@ -1,11 +1,5 @@
 # using Pkg; Pkg.add("BenchmarkTools"); Pkg.add("PlanningDomains"); Pkg.add("PDDL"); Pkg.add("SymbolicPlanners"); Pkg.add("Julog"); Pkg.add("SHA"); Pkg.add("SQLite"); Pkg.add("DataFrames"); Pkg.add("DBInterface"); Pkg.add("Tables")
-using BenchmarkTools, Base.Threads, Timeout, CSV, Dates, DataFrames, ArgParse
-
-include("merge_actions.jl")
-include("parse_solution.jl")
-include("conversion.jl")
-include("utils.jl")
-include("clear_db.jl")
+using BenchmarkTools, Base.Threads, Timeout, CSV, Dates, DataFrames, ArgParse, DynamicMacros, PDDL, PlanningDomains, SymbolicPlanners, Julog, SHA, SQLite, DataFrames, DBInterface, Tables
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -29,9 +23,16 @@ function parse_commandline()
             help = "Output folder"
             arg_type = String
             default = "output_experiments"
+        "--num_macros_training", "-m"
+            help = "Number of macros to train with"
+            default = 5
         "--newdomainoutput", "-n"
             help = "Output folder for the domain"
             arg_type = String
+        "--onlytest"
+            help = "Use if you do not want to train the database."
+            action = :store_true
+            default = false
     end
 
     return parse_args(s)
@@ -46,6 +47,7 @@ mutable struct ExperimentTools
     train_problems::Vector{String}
     problems_location::String
     domain_name::String
+    num_macros_training::Int
 end
 
 function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String, Nothing})
@@ -58,7 +60,7 @@ function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String,
         problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
 
         # get the macro actions from the database
-        picked = pick_macros(experiment_tools.db_name, experiment_tools.domain, experiment_tools.domain_hash, num_macros, true)
+        picked = pick_macros(experiment_tools.db_name, experiment_tools.domain, experiment_tools.domain_hash, experiment_tools.num_macros_training, true)
         converted_merged_macros = [convert_action(macro_action) for macro_action in picked]
 
         for macro_action in converted_merged_macros
@@ -85,7 +87,7 @@ function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String,
     end
 end
 
-function build_experiment_tools(domain_name::String, db_name::String, timeout::Int = 600)
+function build_experiment_tools(domain_name::String, db_name::String, num_macros_training::Int, timeout::Int = 600)
     test_files_location = "pddlgym-problems/"
     domain_location = test_files_location * domain_name * ".pddl"
     problems_locations = test_files_location * domain_name
@@ -103,7 +105,7 @@ function build_experiment_tools(domain_name::String, db_name::String, timeout::I
     domain = load_domain(domain_location)
     domain_hash = hash_file(domain_location)
 
-    return ExperimentTools(db_name, domain, domain_hash, planner, test_problems, train_problems, problems_locations, domain_name)
+    return ExperimentTools(db_name, domain, domain_hash, planner, test_problems, train_problems, problems_locations, domain_name, num_macros_training)
 end
 
 function test_problems(experiment_tools::ExperimentTools, num_macros::Int, output_folder::String, output::String)
@@ -130,7 +132,7 @@ function test_problems(experiment_tools::ExperimentTools, num_macros::Int, outpu
     for i in eachindex(experiment_tools.test_problems)
         problem_name = experiment_tools.test_problems[i]
         println("Start solving: $problem_name")
-        problem = load_problem(experiment_tools.problems_locations * "/" * problem_name)
+        problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
 
         # solve problem
         state = initstate(domain, problem)
@@ -152,7 +154,7 @@ function test_problems(experiment_tools::ExperimentTools, num_macros::Int, outpu
         println("Problem solved")
     end
     mkpath(output_folder)
-    CSV.write("$(output_folder)/$(output).csv", df, append=!control)
+    CSV.write("$(output_folder)/$(output).csv", df, append=(num_macros > 0))
 end
 
 function main()
@@ -162,10 +164,11 @@ function main()
     datetime = Dates.format(Dates.now(), "yyyy-mm-dd_HHMMSS")
     db_name = "params_mydatabase.db"
     
-    experiment_tools = build_experiment_tools(problem, db_name)
+    experiment_tools = build_experiment_tools(problem, db_name, parsed_args["num_macros_training"])
 
-    train(experiment_tools, parsed_args["newdomainoutput"])
+    if !parsed_args["onlytest"] train(experiment_tools, parsed_args["newdomainoutput"]) end
     if parsed_args["trainonly"] return end # Do not test if train_only
+    
     for i in parsed_args["lower"]:parsed_args["upper"]
         test_problems(experiment_tools, i, "output_experiments", datetime)
     end

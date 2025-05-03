@@ -1,5 +1,3 @@
-include("grammar.jl")
-
 # MERGE ACTIONS AND SHRINK PARAMETERS
 function merge_actions_params(actions::Vector{PAction}, param_calls::Vector{Any}, final_params::Vector{PParam}) :: PAction
     # STEP 1: In each action, replace the parameter references with the corresponding parameter call names

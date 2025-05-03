@@ -1,5 +1,4 @@
 using PDDL
-include("grammar.jl")
 
 """
     get_parent_type(name::Symbol, domain::PDDL.Domain) :: PType

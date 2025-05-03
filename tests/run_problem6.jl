@@ -3,7 +3,6 @@ using BenchmarkTools, Base.Threads
 include("merge_actions.jl")
 include("parse_solution.jl")
 include("conversion.jl")
-include("utils.jl")
 include("clear_db.jl")
 
 # Function to export search tree to JSON

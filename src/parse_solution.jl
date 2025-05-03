@@ -1,8 +1,5 @@
 using PDDL, PlanningDomains, SymbolicPlanners, Julog, SHA, SQLite, DataFrames, DBInterface, Tables
 
-include("merge_actions.jl")
-include("conversion.jl")
-
 function transform_expression(expr::String)
     # Remove the trailing close parenthesis
     expr = replace(expr, ")" => "")
@@ -240,15 +237,15 @@ function store_macros(domain, db_name, sol, domain_hash, merge_params=false)
    
 end
 
-function get_parent_type(name::Symbol, domain::PDDL.Domain) :: PType
-    type_tree =  PDDL.get_typetree(domain)
-    parent_type = only(key for (key, value) in type_tree if name in value)
-    if parent_type == :object
-        return PObjectType()
-    else
-        return PCustomType(parent_type, get_parent_type(parent_type, domain))
-    end
-end
+# function get_parent_type(name::Symbol, domain::PDDL.Domain) :: PType
+#     type_tree =  PDDL.get_typetree(domain)
+#     parent_type = only(key for (key, value) in type_tree if name in value)
+#     if parent_type == :object
+#         return PObjectType()
+#     else
+#         return PCustomType(parent_type, get_parent_type(parent_type, domain))
+#     end
+# end
 
 function pick_macros_with_params(db_name, domain, domain_hash, num_macros)
     # Add to database

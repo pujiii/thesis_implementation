@@ -151,7 +151,7 @@ function store_macros_with_params(domain, db_name, sol, domain_hash)
             sub_actions TEXT,
             size INTEGER,
             num_uses INTEGER,
-            cycles_last_included INTEGER DEFAULT -1,
+            cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
             PRIMARY KEY (domain_hash, sub_actions)
         )
     """)
@@ -202,7 +202,7 @@ function store_macros(domain, db_name, sol, domain_hash, merge_params=false)
             sub_actions TEXT,
             size INTEGER,
             num_uses INTEGER,
-            cycles_last_included INTEGER DEFAULT -1,
+            cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
             PRIMARY KEY (domain_hash, sub_actions)
         )
     """)
@@ -237,16 +237,6 @@ function store_macros(domain, db_name, sol, domain_hash, merge_params=false)
    
 end
 
-# function get_parent_type(name::Symbol, domain::PDDL.Domain) :: PType
-#     type_tree =  PDDL.get_typetree(domain)
-#     parent_type = only(key for (key, value) in type_tree if name in value)
-#     if parent_type == :object
-#         return PObjectType()
-#     else
-#         return PCustomType(parent_type, get_parent_type(parent_type, domain))
-#     end
-# end
-
 function pick_macros_with_params(db_name, domain, domain_hash, num_macros)
     # Add to database
     db = SQLite.DB(db_name)
@@ -258,7 +248,7 @@ function pick_macros_with_params(db_name, domain, domain_hash, num_macros)
             sub_actions TEXT,
             size INTEGER,
             num_uses INTEGER,
-            cycles_last_included INTEGER DEFAULT -1,
+            cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
             PRIMARY KEY (domain_hash, sub_actions)
         )
     """)
@@ -306,7 +296,7 @@ function pick_macros(db_name, domain, domain_hash, num_macros, merge_params=fals
             sub_actions TEXT,
             size INTEGER,
             num_uses INTEGER,
-            cycles_last_included INTEGER DEFAULT -1,
+            cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
             PRIMARY KEY (domain_hash, sub_actions)
         )
     """)

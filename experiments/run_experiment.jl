@@ -60,7 +60,7 @@ function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String,
         problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
 
         # get the macro actions from the database
-        picked = pick_macros(experiment_tools.db_name, experiment_tools.domain, experiment_tools.domain_hash, experiment_tools.num_macros_training, true)
+        picked = pick_macros(experiment_tools.db_name, experiment_tools.domain, experiment_tools.domain_hash, experiment_tools.num_macros_training)
         converted_merged_macros = [convert_action(macro_action) for macro_action in picked]
 
         for macro_action in converted_merged_macros
@@ -77,7 +77,7 @@ function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String,
             continue
         end
 
-        store_macros(experiment_tools.domain, experiment_tools.db_name, sol, experiment_tools.domain_hash, true)
+        store_macros(experiment_tools.domain, experiment_tools.db_name, sol, experiment_tools.domain_hash)
         println("Analysed $problem_name")
         # if last iteration, save the domain
         if problem_name == experiment_tools.train_problems[end] && !isnothing(newdomainoutput)
@@ -121,7 +121,7 @@ function test_problems(experiment_tools::ExperimentTools, num_macros::Int, outpu
 
     if num_macros > 0
         # get the macro actions from the database
-        picked = pick_macros(experiment_tools.db_name, domain, experiment_tools.domain_hash, num_macros, true)
+        picked = pick_macros(experiment_tools.db_name, domain, experiment_tools.domain_hash, num_macros)
         converted_merged_macros = [convert_action(macro_action) for macro_action in picked]
 
         for macro_action in converted_merged_macros

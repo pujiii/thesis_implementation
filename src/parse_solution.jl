@@ -60,9 +60,9 @@ function add_or_update_macro_action(domain, db, hash, sub_actions, num_uses, siz
     else
         # If the row doesn't exist, insert a new row
         DBInterface.execute(db, """
-            INSERT INTO macro_actions (domain_hash, sub_actions, size, num_uses)
-            VALUES (?, ?, ?, ?)
-        """, (hash, sub_actions, size, num_uses))
+            INSERT INTO macro_actions (domain_hash, sub_actions, size, num_uses, num_unique_actions)
+            VALUES (?, ?, ?, ?, ?)
+        """, (hash, sub_actions, size, num_uses, length(unique(split(sub_actions)))))
         # println("Inserted: ($hash, $sub_actions)")
     end
 end
@@ -108,11 +108,14 @@ function store_macros(domain, db_name, sol, domain_hash)
             size INTEGER,
             num_uses INTEGER,
             cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
+            num_unique_actions INTEGER DEFAULT 0,
             PRIMARY KEY (domain_hash, sub_actions)
         )
     """)
 
+    println(sol.plan)
     plan = (PDDL.parse_pddl.(transform_expression.(string.(sol.plan))))
+    println(plan)
 
     # println(plan)
     # println("==========================")
@@ -134,7 +137,7 @@ function store_macros(domain, db_name, sol, domain_hash)
     end
 
     # turn into tuple (macro_action, number of uses in plan, length of macro action)
-    macro_actions_info = [(domain_hash, join(split(replace(join([string(action.name) * "|" * join(["-" * string(param) for param in action.args]) for action in macro_action], " "), "-plus-" => " "), " "), " "), count(x -> x == macro_action, macro_actions), length(macro_action)) for macro_action in macro_actions]
+    macro_actions_info = [(domain_hash, join(split(replace(join([string(action.name) * "-" * join(["-" * string(param) for param in action.args]) for action in macro_action], " "), "-plus-" => " "), " "), " "), count(x -> x == macro_action, macro_actions), length(macro_action)) for macro_action in macro_actions]
 
     for entry in macro_actions_info
         add_or_update_macro_action(domain, db, entry...)
@@ -145,11 +148,57 @@ function store_macros(domain, db_name, sol, domain_hash)
     SQLite.close(db)
 end
 
-function pick_macros(db_name, domain, domain_hash, num_macros)
+# function pick_macros(db_name, domain, domain_hash, num_macros)
+#     # Add to database
+#     db = SQLite.DB(db_name)
+
+#     # Define the table schema with a composite primary key
+#     DBInterface.execute(db, """
+#         CREATE TABLE IF NOT EXISTS macro_actions (
+#             domain_hash TEXT,
+#             sub_actions TEXT,
+#             size INTEGER,
+#             num_uses INTEGER,
+#             cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
+#             PRIMARY KEY (domain_hash, sub_actions)
+#         )
+#     """)
+
+#     result = DBInterface.execute(db, """
+#     SELECT * FROM macro_actions 
+#     WHERE domain_hash = ? 
+#     ORDER BY (num_uses * size) DESC LIMIT ?""", (domain_hash, num_macros)) |> DataFrame
+
+#     SQLite.close(db)
+
+#     list_of_tuples = [Tuple(row) for row in eachrow(result)]
+
+#     merged_actions :: Vector{PAction} = []
+
+#     for row in list_of_tuples
+#         actions = [split(action, "|") for action in split(row[2])]
+#         action_objects :: Vector{PAction}= []
+#         param_calls = []
+#         final_params = Set{PParam}()
+#         for i in eachindex(actions)
+#             action = domain.actions[Symbol(actions[i][1])]
+#             push!(action_objects, convert_action(action, domain))
+#             param_names = [Symbol(x) for x in split(actions[i][2], "-")[2:end]]
+#             param_types = [typename == :object ? PObjectType() : PCustomType(typename, get_parent_type(typename, domain)) for typename in PDDL.get_argtypes(action)]
+#             params = [PParam(param_names[i], param_types[i]) for i in eachindex(param_names)]
+#             union!(final_params, Set(params))
+#             push!(param_calls, param_names)
+#         end
+#         push!(merged_actions, merge_actions_params(action_objects, collect(param_calls), collect(final_params)))
+#     end
+    
+#     return merged_actions
+# end
+
+function pick_macros(db_name, domain, domain_hash, num_macros, mode="largest", sort_by="num_uses")
     # Add to database
     db = SQLite.DB(db_name)
-
-    # Define the table schema with a composite primary key
+        # Define the table schema with a composite primary key
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS macro_actions (
             domain_hash TEXT,
@@ -157,30 +206,67 @@ function pick_macros(db_name, domain, domain_hash, num_macros)
             size INTEGER,
             num_uses INTEGER,
             cycles_last_included INTEGER DEFAULT $(length(domain.actions) * 100),
+            num_unique_actions INTEGER DEFAULT 0,
             PRIMARY KEY (domain_hash, sub_actions)
         )
     """)
 
-    result = DBInterface.execute(db, """
-    SELECT * FROM macro_actions 
-    WHERE domain_hash = ? 
-    ORDER BY (num_uses * size) DESC LIMIT ?""", (domain_hash, num_macros)) |> DataFrame
+    flag = false
+    i = 0
+    to_add = []
+    while length(to_add) < num_macros
+        # Get ith set of 10 next macros sorted by size * num_uses
+        result = DBInterface.execute(db, """
+        SELECT * FROM macro_actions 
+        WHERE domain_hash = ?
+        ORDER BY ($(sort_by)) DESC LIMIT ? OFFSET ?""", (domain_hash, num_macros, i * num_macros)) |> DataFrame
+        if length(eachrow(result)) == 0
+            break
+        end
+        if mode == "allow_overlap"
+            to_add = eachrow(result)
+            break
+        end
+        i += 1
+
+        for row in eachrow(result)
+            overlap = []
+            larger = false
+            for j in eachindex(to_add)
+                # check if row[2] has overlap with to_add[j][2]
+                if occursin(row[2], to_add[j][2]) || occursin(to_add[j][2], row[2])
+                    if length(row[2]) > length(to_add[j][2]) # if row is larger than to_add[j]
+                        larger = true
+                        push!(overlap, j)
+                    end
+                end
+            end
+            if length(overlap) > 0
+                if (mode == "largest" && larger)
+                    deleteat!(to_add, [(j in overlap) for j in 1:length(to_add)])
+                    push!(to_add, row)
+                end
+            else
+                push!(to_add, row)
+            end
+        end
+    end
 
     SQLite.close(db)
 
-    list_of_tuples = [Tuple(row) for row in eachrow(result)]
+    list_of_tuples = [Tuple(row) for row in to_add]
 
     merged_actions :: Vector{PAction} = []
 
     for row in list_of_tuples
-        actions = [split(action, "|") for action in split(row[2])]
+        actions = [split(action, "--") for action in split(row[2])]
         action_objects :: Vector{PAction}= []
         param_calls = []
         final_params = Set{PParam}()
         for i in eachindex(actions)
             action = domain.actions[Symbol(actions[i][1])]
             push!(action_objects, convert_action(action, domain))
-            param_names = [Symbol(x) for x in split(actions[i][2], "-")[2:end]]
+            param_names = [Symbol(x) for x in split(actions[i][2], "-")]
             param_types = [typename == :object ? PObjectType() : PCustomType(typename, get_parent_type(typename, domain)) for typename in PDDL.get_argtypes(action)]
             params = [PParam(param_names[i], param_types[i]) for i in eachindex(param_names)]
             union!(final_params, Set(params))

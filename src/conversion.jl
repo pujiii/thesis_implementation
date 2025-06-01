@@ -15,11 +15,19 @@ Retrieve the parent type of a given type name within a specified PDDL domain.
 """
 function get_parent_type(name::Symbol, domain::PDDL.Domain) :: PType
     type_tree =  PDDL.get_typetree(domain)
-    parent_type = only(key for (key, value) in type_tree if name in value)
-    if parent_type == :object
+    parent_type = [key for (key, value) in type_tree if name in value]
+    if parent_type == []
         return PObjectType()
     else
-        return PCustomType(parent_type, get_parent_type(parent_type, domain))
+        return PCustomType(parent_type[1], get_parent_type(parent_type[1], domain))
+    end
+end
+
+function create_type(name::Symbol, domain::PDDL.Domain) :: PType
+    if name == :object
+        return PObjectType()
+    else
+        return PCustomType(name, get_parent_type(name, domain))
     end
 end
 
@@ -38,7 +46,12 @@ Retrieve the predicates from a given PDDL domain.
 function get_predicates(domain::PDDL.Domain) :: Dict{Symbol, PPred}
     predicates = Dict{Symbol, PPred}()
     for pred in collect(values(PDDL.get_predicates(domain)))
-        predicates[pred.name] = PPred(pred.name, [get_parent_type(t, domain) for t in collect(pred.argtypes)])
+        # println(typeof(t) for t in [i for i in pred.argtypes)
+        parent_types = []
+        for t in pred.argtypes
+            push!(parent_types, create_type(t, domain))
+        end
+        predicates[pred.name] = PPred(pred.name, parent_types)
     end
     if PDDL.get_requirements(domain)[:equality]
         predicates[:(==)] = PPred(:(==), [PAny(), PAny()])

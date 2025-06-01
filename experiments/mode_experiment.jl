@@ -18,13 +18,15 @@ function parse_commandline()
             default = 0
         "--upper", "-u"
             help = "Upper bound of the number of macros to test"
-            default = 10
+            arg_type = Int
+            default = 20
         "--output", "-o"
             help = "Output folder"
             arg_type = String
             default = "output_experiments"
         "--num_macros_training", "-m"
             help = "Number of macros to train with"
+            arg_type = Int
             default = 5
         "--newdomainoutput", "-n"
             help = "Output folder for the domain"
@@ -51,7 +53,7 @@ mutable struct ExperimentTools
     num_macros_training::Int
 end
 
-function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String, Nothing})
+function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String, Nothing}=nothing)
     # Clear the database to prevent old knowledge from seeping in
     clear_database(experiment_tools.db_name, experiment_tools.domain)
     # Now train the model on the training files
@@ -88,7 +90,7 @@ function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String,
     end
 end
 
-function dynamically_test(experiment_tools::ExperimentTools, num_macros::Int, output_folder::String, output_file::String, mode::String, sort_by::String)
+function dynamically_test(experiment_tools::ExperimentTools, num_macros::Int, output_folder::String, output_file::String, mode::String, sort_by="num_uses")
     
     df = DataFrame(
         domain_name = String[],
@@ -108,7 +110,7 @@ function dynamically_test(experiment_tools::ExperimentTools, num_macros::Int, ou
         problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
 
         # get the macro actions from the database
-        picked = pick_macros(experiment_tools.db_name, experiment_tools.domain, experiment_tools.domain_hash, experiment_tools.num_macros_training, mode, sort_by)
+        picked = pick_macros(experiment_tools.db_name, experiment_tools.domain, experiment_tools.domain_hash, experiment_tools.num_macros_training, mode)
         converted_merged_macros = [convert_action(macro_action) for macro_action in picked]
 
         for macro_action in converted_merged_macros
@@ -151,6 +153,8 @@ function build_experiment_tools(domain_name::String, db_name::String, num_macros
     # divide into training and test set
     train_problems = problem_files[1:floor(Int, length(problem_files) * 0.8)]
     test_problems = problem_files[floor(Int, length(problem_files) * 0.8) + 1:end]
+    # train_problems = vcat(problem_files[1:11], problem_files[16:end]) 
+    # test_problems = problem_files[12:15]
 
     planner = AStarPlanner(HAdd())
     planner.max_time = timeout # 1 hour
@@ -161,20 +165,21 @@ function build_experiment_tools(domain_name::String, db_name::String, num_macros
     return ExperimentTools(db_name, domain, domain_hash, planner, test_problems, train_problems, problem_files, problems_locations, domain_name, num_macros_training)
 end
 
-function test_problems(experiment_tools::ExperimentTools, num_macros::Int, output_folder::String, output::String)
+function test_problems(experiment_tools::ExperimentTools, num_macros::Int, output_folder::String, output::String, mode::String="largest")
 
     df = DataFrame(
         domain_name = String[],
         num_macros = Int[],
         problem_name = String[],
-        expanded = Int[]
+        expanded = Int[],
+        mode = String[]
     )
 
     domain = deepcopy(experiment_tools.domain)
 
     if num_macros > 0
         # get the macro actions from the database
-        picked = pick_macros(experiment_tools.db_name, domain, experiment_tools.domain_hash, num_macros)
+        picked = pick_macros(experiment_tools.db_name, domain, experiment_tools.domain_hash, num_macros, mode)
         converted_merged_macros = [convert_action(macro_action) for macro_action in picked]
 
         for macro_action in converted_merged_macros
@@ -182,8 +187,8 @@ function test_problems(experiment_tools::ExperimentTools, num_macros::Int, outpu
         end
     end
 
-    for i in eachindex(experiment_tools.all_problems)
-        problem_name = experiment_tools.all_problems[i]
+    for i in eachindex(experiment_tools.test_problems)
+        problem_name = experiment_tools.test_problems[i]
         println("Start solving: $problem_name")
         problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
 
@@ -204,7 +209,7 @@ function test_problems(experiment_tools::ExperimentTools, num_macros::Int, outpu
         println(sol.plan)
         time_taken = sol.expanded
         
-        push!(df, (experiment_tools.domain_name, num_macros, problem_name, time_taken))
+        push!(df, (experiment_tools.domain_name, num_macros, problem_name, time_taken, mode))
         println("Problem solved")
     end
     mkpath(output_folder)
@@ -220,22 +225,20 @@ function main()
     
     experiment_tools = build_experiment_tools(problem, db_name, parsed_args["num_macros_training"], 600)
 
-    # if !parsed_args["onlytest"] train(experiment_tools, parsed_args["newdomainoutput"]) end
-    # if parsed_args["trainonly"] return end # Do not test if train_only
+    train(experiment_tools)
     
-    # for i in parsed_args["lower"]:parsed_args["upper"]
-    #     test_problems(experiment_tools, i, "output_experiments", datetime)
-    # end
 
+    # println(typeof(parsed_args["upper"]))
     # first test all problems with no macros
-    test_problems(experiment_tools, 0, parsed_args["output"], datetime)
-
-    sort_by = ["num_uses", "size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]
-    # sort_by = ["random()"]
-
-    for s in sort_by
-        dynamically_test(experiment_tools, parsed_args["num_macros_training"], parsed_args["output"], datetime, "best", s)
+    for mode in ["largest", "best", "allow_overlap"]
+        test_problems(experiment_tools, 5, parsed_args["output"], datetime, mode)
     end
+
+    # sort_by = ["num_uses", "size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "num_uses * cycles_last_included", "size * cycles_last_included", "num_uses * size * cycles_last_included", "num_uses * num_unique_actions * cycles_last_included"]
+
+    # for s in sort_by
+    #     dynamically_test(experiment_tools, parsed_args["num_macros_training"], parsed_args["output"], datetime, "largest", s)
+    # end
 end
 
 main()

@@ -19,7 +19,7 @@ function merge_actions_params(actions::Vector{PAction}, param_calls::Vector{Any}
     new_name = ""
     for i in 1:length(actions)
         action = actions[i]
-        new_name *= string(action.name) * "-" * join([string(x) for x in param_calls[i]], "-")
+        new_name *= string(action.name) * "--" * join([string(x) for x in param_calls[i]], "-")
         if i < length(actions)
             new_name *= "-plus-"
         end

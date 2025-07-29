@@ -38,6 +38,27 @@ function parse_commandline()
     return parse_args(s)
 end
 
+function run_with_timeout(domain_name::String, problem_name::String; timeout_sec::Real=0.1)
+    println("aaaaa")
+    output = IOBuffer()
+    # process = Base.open(cmd, output, read=true)
+    # process = Base.open(, output, read=true)
+    
+    # task = @async wait(process)
+
+    # while !istaskdone(task) && (time() - start_time < timeout_sec)
+    #     sleep(0.1)  # Check every 100ms
+    # end
+    output = read(`python Implementation/experiments/timeout.py $(domain_name) $(problem_name)`, String)
+    
+    println("output: $output")
+
+    expanded = parse(Int, split(output, "\n")[1])
+    plan = split(split(output, "\n")[2], " ~ ")[1:end-1]
+
+    return (; expanded=expanded, plan=plan)
+end
+
 mutable struct ExperimentTools
     db_name::String
     domain::Domain
@@ -81,10 +102,7 @@ function train(experiment_tools::ExperimentTools, newdomainoutput::Union{String,
         store_macros(experiment_tools.domain, experiment_tools.db_name, sol, experiment_tools.domain_hash)
         println("Analysed $problem_name")
         # if last iteration, save the domain
-        if problem_name == experiment_tools.train_problems[end] && !isnothing(newdomainoutput)
-            println("Saving domain to $newdomainoutput")
-            save_domain(domain, newdomainoutput)
-        end
+        save_domain(domain, "temp/domain.pddl")
     end
 end
 
@@ -116,30 +134,21 @@ function dynamically_test(experiment_tools::ExperimentTools, num_macros::Int, ou
             domain.actions[macro_action.name] = macro_action
         end
 
-        # solve problem
-        state = initstate(experiment_tools.domain, problem)
-        costs = Dict([(action.name, -(length(split(string(action.name), "-plus-")) - 1)) for action in values(domain.actions)])
-        spec = MinActionCosts([PDDL.get_goal(problem)::Term], costs)
-        spec = MinStepsGoal(problem) # use the original goal for the problem
-
         println("Saving domain")
-        save_domain("$(output_folder)/$(output_file)_$(sort_by)_$(problem_name)_domain.pddl", domain)
+        save_domain("temp/domain.pddl", domain)
 
-        println("Running planner")
-        # time how long it takes to solve the problem
-        sol = experiment_tools.planner(domain, state, spec)
-        if sol.status == :max_time
+        sol = run_with_timeout(experiment_tools.domain_name, problem_name)
+
+        if sol.expanded == -1
             println("Timed out")
+            push!(df, (experiment_tools.domain_name, num_macros, problem_name, -1, mode, sort_by))
             continue
         end
-        time_taken = sol.expanded
-        println("Plan found")
-        println(sol.plan)
 
         store_macros(experiment_tools.domain, experiment_tools.db_name, sol, experiment_tools.domain_hash)
         println("Solved+analysed $problem_name")
         
-        push!(df, (experiment_tools.domain_name, num_macros, problem_name, time_taken, mode, sort_by))
+        push!(df, (experiment_tools.domain_name, num_macros, problem_name, sol.expanded, mode, sort_by))
     end
     
     mkpath(output_folder)
@@ -188,26 +197,37 @@ function test_problems(experiment_tools::ExperimentTools, num_macros::Int, outpu
         end
     end
 
+    save_domain("temp/domain.pddl", domain)
+
+
     for i in eachindex(experiment_tools.all_problems)
         problem_name = experiment_tools.all_problems[i]
         println("Start solving: $problem_name")
-        problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
+        # problem = load_problem(experiment_tools.problems_location * "/" * problem_name)
 
-        # solve problem
-        state = initstate(domain, problem)
-        # spec = MinStepsGoal(problem)
-        # costs = Dict([(action.name, !occursin("-plus-", string(action.name))) for action in values(domain.actions)])
-        costs = Dict([(action.name, -(length(split(string(action.name), "-plus-")) - 1)) for action in values(domain.actions)])
-        spec = MinActionCosts([PDDL.get_goal(problem)::Term], costs)
-        spec = MinStepsGoal(problem) # use the original goal for the problem
+        # # solve problem
+        # state = initstate(domain, problem)
+        # # spec = MinStepsGoal(problem)
+        # # costs = Dict([(action.name, !occursin("-plus-", string(action.name))) for action in values(domain.actions)])
+        # costs = Dict([(action.name, -(length(split(string(action.name), "-plus-")) - 1)) for action in values(domain.actions)])
+        # spec = MinActionCosts([PDDL.get_goal(problem)::Term], costs)
+        # spec = MinStepsGoal(problem) # use the original goal for the problem
 
-        sol = experiment_tools.planner(domain, state, spec)
-        if sol.status == :max_time
+        # sol = experiment_tools.planner(domain, state, spec)
+        # if sol.status == :max_time
+        #     println("Timed out")
+        #     push!(df, (experiment_tools.domain_name, num_macros, problem_name, -1))
+        #     continue
+        # end
+        sol = run_with_timeout(experiment_tools.domain_name, problem_name)
+
+        if sol.expanded == -1
             println("Timed out")
             push!(df, (experiment_tools.domain_name, num_macros, problem_name, -1))
             continue
         end
-        println(sol.plan)
+
+        # println(sol.plan)
         time_taken = sol.expanded
         
         push!(df, (experiment_tools.domain_name, num_macros, problem_name, time_taken))
@@ -234,7 +254,11 @@ function main()
     # end
 
     # first test all problems with no macros
-    # test_problems(experiment_tools, 0, parsed_args["output"], datetime)
+    if !parsed_args["trainonly"]
+        test_problems(experiment_tools, 0, parsed_args["output"], datetime) 
+    end
+
+    if parsed_args["onlytest"] return end
 
     sort_by = ["num_uses", "size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]
     # sort_by = ["size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]

@@ -87,7 +87,7 @@ function convert_expr(expr:: PExpr) :: Term
     elseif expr isa PNot
         return Compound(:not, [convert_expr(expr.arg)])
     elseif expr isa PAnd
-        return Compound(:and, [convert_expr(arg) for arg in expr.args])
+        return Compound(:and, unique([convert_expr(arg) for arg in expr.args]))
     end
 end
 

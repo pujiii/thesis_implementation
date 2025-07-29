@@ -56,11 +56,11 @@ function div_conq_pre_post(a₁::PAction, a₂::PAction) :: PAction
     end
 
     # add all effects of a₂
-    for e in a₂.eff.args push!(eff, e) end
+    for e in to_list(a₂.eff) push!(eff, e) end
 
     # add each effect of a₁ that is not negated by a₂
-    for e in a₁.eff.args
-        if !any([get_name(e) == get_name(q) for q in a₂.eff.args])
+    for e in to_list(a₁.eff)
+        if !any([get_name(e) == q for q in get_names(a₂.eff)])
             push!(eff, e)
         end
     end
@@ -142,8 +142,8 @@ function mergeActions(a₁::PAction, a₂::PAction, all_actions :: Vector{PActio
     for e in a₂.eff.args push!(eff, e) end
 
     # add each effect of a₁ that is not negated by a₂
-    for e in a₁.eff.args
-        if !any([e == get_name(q) for q in a₂.eff.args])
+    for e in to_list(a₁.eff)
+        if !any([get_name(e) == q for q in get_names(a₂.eff)])
             push!(eff, e)
         end
     end
@@ -156,6 +156,19 @@ function mergeActions(a₁::PAction, a₂::PAction, all_actions :: Vector{PActio
 
 end
 
+function get_names(expr::PExpr) :: Vector{Symbol}
+    list = to_list(expr)
+    res = []
+    for e in list
+        if e isa PPredCall
+            push!(res, e.pred.name)
+        elseif e isa PNot{PPredCall}
+            push!(res, e.arg.pred.name)
+        end
+    end
+    return res
+end
+
 function get_name(expr::PExpr) :: Symbol
     if expr isa PPredCall
         return expr.pred.name
@@ -166,7 +179,7 @@ end
 
 function to_list(expr::PExpr) :: Vector{Union{PPredCall, PNot{PPredCall}}}
     if expr isa PPredCall
-        return [expr.pred]
+        return [expr]
     elseif expr isa PNot
         return [expr.arg]
     elseif expr isa PAnd

@@ -23,7 +23,7 @@ function hash_file(filepath::String, algorithm=sha256)
     end
 end
 
-function add_or_update_macro_action(domain, db, hash, sub_actions, num_uses, size, merge_params=false)
+function add_or_update_macro_action(domain, db, hash, sub_actions, num_uses, size, num_unique_actions, merge_params=false)
     # Check if the row already exists
     result = DBInterface.execute(db, """
         SELECT num_uses FROM macro_actions
@@ -62,7 +62,7 @@ function add_or_update_macro_action(domain, db, hash, sub_actions, num_uses, siz
         DBInterface.execute(db, """
             INSERT INTO macro_actions (domain_hash, sub_actions, size, num_uses, num_unique_actions)
             VALUES (?, ?, ?, ?, ?)
-        """, (hash, sub_actions, size, num_uses, length(unique(split(sub_actions)))))
+        """, (hash, sub_actions, size, num_uses, num_unique_actions))
         # println("Inserted: ($hash, $sub_actions)")
     end
 end
@@ -120,14 +120,34 @@ function store_macros(domain, db_name, sol, domain_hash)
     # println(plan)
     # println("==========================")
     # First update all the used macro-actions
+    # for action in plan
+    #     # println(action.name)
+    #     # if action name contains "+"
+    #     if occursin("-plus-", string(action.name))
+    #         sub_actions = split(string(action.name), "-plus-")
+    #         add_or_update_macro_action(domain, db, domain_hash, join(sub_actions, " "), 1, length(sub_actions))
+    #     end
+    # end
+    decomposed_plan :: Vector{Compound} = []
     for action in plan
-        # println(action.name)
-        # if action name contains "+"
         if occursin("-plus-", string(action.name))
             sub_actions = split(string(action.name), "-plus-")
-            add_or_update_macro_action(domain, db, domain_hash, join(sub_actions, " "), 1, length(sub_actions))
+            for sub_action in sub_actions
+                split_sub_action = split(sub_action, "--")
+                action_name = split_sub_action[1]
+                var_indices = parse.(Int, split(split_sub_action[2][4:end], "-var"))
+                new_action = Compound(Symbol(action_name), map(i -> action.args[i], var_indices))
+                push!(decomposed_plan, new_action)
+            end
+        else
+            push!(decomposed_plan, action)
         end
+        
     end
+
+    plan = decomposed_plan
+
+    println("DIT -> $decomposed_plan")
 
     # Find all sublists n > 1 of the plan
     macro_actions = [plan[i:j] for i in 1:length(plan) for j in i:length(plan) if length(plan[i:j]) > 1]
@@ -137,7 +157,30 @@ function store_macros(domain, db_name, sol, domain_hash)
     end
 
     # turn into tuple (macro_action, number of uses in plan, length of macro action)
-    macro_actions_info = [(domain_hash, join(split(replace(join([string(action.name) * "-" * join(["-" * string(param) for param in action.args]) for action in macro_action], " "), "-plus-" => " "), " "), " "), count(x -> x == macro_action, macro_actions), length(macro_action)) for macro_action in macro_actions]
+    # macro_actions_info = [(domain_hash, 
+    # join(
+    #     split(
+    #         replace(
+    #             join(
+    #                 [
+    #                     string(action.name) * "-" * join(["-" * string(param) for param in action.args]) for action in macro_action
+    #                     ], " "
+    #                 ), 
+    #                 "-plus-" => " ")
+    #                 , " ")
+    #             , " "), 
+    # count(x -> x == macro_action, macro_actions), 
+    # length(macro_action)) for macro_action in macro_actions]
+    macro_actions_info = [(domain_hash, 
+                join(
+                    [
+                        string(action.name) * "-" * join(["-" * string(param) for param in action.args]) for action in macro_action
+                        ], " "
+                    ), 
+    count(x -> x == macro_action, macro_actions), 
+    length(macro_action),
+    length(unique(map(a -> a.name, macro_action)))
+    ) for macro_action in macro_actions]
 
     for entry in macro_actions_info
         add_or_update_macro_action(domain, db, entry...)
@@ -259,6 +302,7 @@ function pick_macros(db_name, domain, domain_hash, num_macros, mode="largest", s
     merged_actions :: Vector{PAction} = []
 
     for row in list_of_tuples
+        # println(row[2])
         actions = [split(action, "--") for action in split(row[2])]
         action_objects :: Vector{PAction}= []
         param_calls = []
@@ -266,8 +310,11 @@ function pick_macros(db_name, domain, domain_hash, num_macros, mode="largest", s
         for i in eachindex(actions)
             action = domain.actions[Symbol(actions[i][1])]
             push!(action_objects, convert_action(action, domain))
+            # println(actions[i][2])
             param_names = [Symbol(x) for x in split(actions[i][2], "-")]
             param_types = [typename == :object ? PObjectType() : PCustomType(typename, get_parent_type(typename, domain)) for typename in PDDL.get_argtypes(action)]
+            # println("param_names: $param_names")
+            # println("param_types: $param_types")
             params = [PParam(param_names[i], param_types[i]) for i in eachindex(param_names)]
             union!(final_params, Set(params))
             push!(param_calls, param_names)

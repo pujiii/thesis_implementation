@@ -260,12 +260,12 @@ function main()
 
     if parsed_args["onlytest"] return end
 
-    # sort_by = ["num_uses", "size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]
+    sort_by = ["num_uses", "size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]
     # sort_by = ["size", "num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]
 
     # sort_by = ["num_uses * size", "num_uses * num_unique_actions", "num_unique_actions", "random()"]
 
-    sort_by = ["num_uses"]
+    # sort_by = ["num_uses"]
 
     for s in sort_by
         dynamically_test(experiment_tools, parsed_args["num_macros_training"], parsed_args["output"], datetime, "best", s)
